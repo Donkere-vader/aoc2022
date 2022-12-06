@@ -1,12 +1,12 @@
-use std::{fs::read_to_string, thread};
+use std::{fs::read_to_string, thread, sync::Arc};
 
-const NUM_THREADS: usize = 8;
+const MAX_THREADS: usize = 16;
 
-fn detect_unique_sequence(data: &[char], sequence_length: usize) -> Result<usize, String> {
+fn detect_unique_sequence(data: &[char], sequence_length: usize, skip: usize, take: usize) -> Result<usize, String> {
     let mut buffer: Vec<char> = vec!['a'];
-    buffer.append(&mut data.iter().take(sequence_length - 1).map(|c| *c).collect::<Vec<char>>());
+    buffer.append(&mut data.iter().skip(skip).take(take).take(sequence_length - 1).map(|c| *c).collect::<Vec<char>>());
     let mut skip_check: usize = 0;
-    'outer: for (idx, character) in data.iter().enumerate().skip(sequence_length - 1) {
+    'outer: for (idx, character) in data.iter().skip(skip).take(take).enumerate().skip(sequence_length - 1) {
         buffer.push(*character);
         buffer.remove(0);
         if skip_check > 0 {
@@ -23,7 +23,8 @@ fn detect_unique_sequence(data: &[char], sequence_length: usize) -> Result<usize
             }
         }
 
-        return Ok(idx + 1);
+        // println!("{} {} {}", skip, character, idx + skip + 1);
+        return Ok(idx + skip + 1);
     }
 
     Err("Not found".to_string())
@@ -31,26 +32,45 @@ fn detect_unique_sequence(data: &[char], sequence_length: usize) -> Result<usize
 
 fn do_parallel(data: &[char], sequence_length: usize) -> usize {
     let mut threads = Vec::new();
+    let data_arc: Arc<Vec<char>> = Arc::new(data.iter().map(|c| *c).collect::<Vec<char>>());
 
-    let section_size = data.len() / NUM_THREADS;
+    let mut number_of_threads = MAX_THREADS;
+    let mut section_size = data.len() / MAX_THREADS;
+    while section_size < sequence_length {
+        number_of_threads -= 1;
+        section_size = data.len() / number_of_threads;
+    }
 
-    for i in 0i32..NUM_THREADS as i32 {
-        let start = ((i * section_size as i32) - (sequence_length - 1) as i32).max(0) as usize;
-        let end = (i * section_size as i32) as usize + section_size;
-        let sub_section = data[start..end].iter()
-                .map(|c| *c)
-                .collect::<Vec<char>>();
+    // println!("{:?}", data);
+    for i in 0..number_of_threads {
+        // let start = ((i * section_size as i32) - (sequence_length - 1) as i32).max(0) as usize;
+        let start = ((i * section_size) as i32 - (sequence_length - 1) as i32).max(0) as usize;
+        let sec_size = ((i * section_size) as usize + section_size) - start;
+        let data_arc_clone = Arc::clone(&data_arc);
+        let seq_length = sequence_length.clone();
+        // println!("{} {:?}", start, data_arc_clone.iter().skip(start).take(sec_size).map(|c| *c).collect::<Vec<char>>());
         threads.push(thread::spawn(move || {
-            detect_unique_sequence(&sub_section, sequence_length)
+            detect_unique_sequence(&data_arc_clone, seq_length, start, sec_size)
         }));
     }
 
+    let mut lowest = None;
     for join_handle in threads.into_iter() {
         let result = join_handle.join().unwrap();
 
         if let Ok(num) = result {
-            return num;
+            if let Some(n) = lowest {
+                if num < n {
+                    lowest = Some(num);
+                }
+            } else {
+                lowest = Some(num);
+            }
         }
+    }
+
+    if let Some(num) = lowest {
+        return num;
     }
 
     panic!("Not found");
