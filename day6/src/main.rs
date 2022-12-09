@@ -2,11 +2,11 @@ use std::{fs::read_to_string, thread, sync::Arc};
 
 const MAX_THREADS: usize = 16;
 
-fn detect_unique_sequence(data: &[char], sequence_length: usize, skip: usize, take: usize) -> Result<usize, String> {
+fn detect_unique_sequence(data: &[char], sequence_length: usize) -> Result<usize, String> {
     let mut buffer: Vec<char> = vec!['a'];
-    buffer.append(&mut data.iter().skip(skip).take(take).take(sequence_length - 1).map(|c| *c).collect::<Vec<char>>());
+    buffer.append(&mut data.iter().take(sequence_length - 1).map(|c| *c).collect::<Vec<char>>());
     let mut skip_check: usize = 0;
-    'outer: for (idx, character) in data.iter().skip(skip).take(take).enumerate().skip(sequence_length - 1) {
+    'outer: for (idx, character) in data.iter().enumerate().skip(sequence_length - 1) {
         buffer.push(*character);
         buffer.remove(0);
         if skip_check > 0 {
@@ -24,7 +24,7 @@ fn detect_unique_sequence(data: &[char], sequence_length: usize, skip: usize, ta
         }
 
         // println!("{} {} {}", skip, character, idx + skip + 1);
-        return Ok(idx + skip + 1);
+        return Ok(idx + 1);
     }
 
     Err("Not found".to_string())
@@ -50,7 +50,11 @@ fn do_parallel(data: &[char], sequence_length: usize) -> usize {
         let seq_length = sequence_length.clone();
         // println!("{} {:?}", start, data_arc_clone.iter().skip(start).take(sec_size).map(|c| *c).collect::<Vec<char>>());
         threads.push(thread::spawn(move || {
-            detect_unique_sequence(&data_arc_clone, seq_length, start, sec_size)
+            let res = detect_unique_sequence(&data_arc_clone[start..start+sec_size], seq_length);
+            if let Ok(n) = res {
+                return Ok(n + start)
+            }
+            Err("Not found")
         }));
     }
 
